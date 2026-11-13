@@ -1,0 +1,27 @@
+/* Only small additions: the page relies on AzuraCast's own Bootstrap theme (light and dark). */
+.show-downloader-app .icon {
+    width: 1.25em;
+    height: 1.25em;
+    vertical-align: -0.25em;
+    margin-right: 0.25rem;
+}
+.show-downloader-app .sd-status {
+    max-width: 22rem;
+}
+.show-downloader-app td h5 {
+    font-size: 1rem;
+}
+.show-downloader-app + .modal-backdrop,
+.show-downloader .modal-backdrop {
+    z-index: 1050;
+}
+.show-downloader .modal {
+    z-index: 1055;
+}
+.show-downloader .sd-folders {
+    max-height: 14rem;
+    overflow-y: auto;
+}
+.show-downloader .sd-preview code {
+    word-break: break-all;
+}

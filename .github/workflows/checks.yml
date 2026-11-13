@@ -1,0 +1,26 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: curl, mbstring
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: PHP syntax
+        run: find src events.php tests -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: PHP tests
+        run: php tests/run.php
+      - name: Shell syntax
+        run: for f in install.sh bin/*.sh; do bash -n "$f"; done
+      - name: Build and JS tests
+        run: npm ci && npm run build && npm test

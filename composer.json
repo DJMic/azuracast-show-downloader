@@ -1,0 +1,14 @@
+{
+  "name": "azuracast-plugins/azuracast-show-downloader",
+  "description": "Téléchargement automatique et planifié d'émissions (FTP, SFTP, URL) vers la médiathèque des stations AzuraCast.",
+  "type": "azuracast-plugin",
+  "license": "MIT",
+  "require": {
+    "php": "^8.4"
+  },
+  "autoload": {
+    "psr-4": {
+      "Plugin\\AzuracastShowDownloader\\": "src/"
+    }
+  }
+}
