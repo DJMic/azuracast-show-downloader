@@ -10,6 +10,17 @@ export const DAYS = [
 
 export const DATE_FORMATS = ["YYYYMMDD", "YYYY-MM-DD", "YYMMDD", "DDMMYYYY", "DD-MM-YYYY", "DDMMYY", "DD.MM.YYYY", "DD_MM_YYYY"];
 
+export const TAG_FIELDS = [
+    {key: "title", label: "Titre", placeholder: "{show} du {date:DD/MM/YYYY}"},
+    {key: "artist", label: "Artiste", placeholder: "Radio Exemple"},
+    {key: "album", label: "Album", placeholder: "{show}"},
+    {key: "genre", label: "Genre", placeholder: "Podcast"},
+];
+
+export function emptyTags() {
+    return {enabled: false, title: "", artist: "", album: "", genre: ""};
+}
+
 export function emptyJob() {
     return {
         id: "",
@@ -44,6 +55,7 @@ export function emptyJob() {
             on_exists: "overwrite",
             playlist_id: null,
         },
+        tags: emptyTags(),
         schedule: {
             slots: [{days: [1, 2, 3, 4, 5], time: "06:00"}],
             retry_interval: 15,

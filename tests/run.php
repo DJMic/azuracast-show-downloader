@@ -7,10 +7,12 @@ declare(strict_types=1);
 require __DIR__ . '/../src/Service/Naming.php';
 require __DIR__ . '/../src/Service/Job.php';
 require __DIR__ . '/../src/Service/Scheduler.php';
+require __DIR__ . '/../src/Service/Tagger.php';
 
 use Plugin\AzuracastShowDownloader\Service\Job;
 use Plugin\AzuracastShowDownloader\Service\Naming;
 use Plugin\AzuracastShowDownloader\Service\Scheduler;
+use Plugin\AzuracastShowDownloader\Service\Tagger;
 
 $failures = 0;
 function check(string $label, mixed $actual, mixed $expected): void
@@ -103,6 +105,24 @@ check('missed after window', Scheduler::decide($job, $state, $now->modify('+3 ho
 check('manual first', Scheduler::decide($job, ['run_requested' => 1], $now)['trigger'] ?? null, 'manual');
 $job['enabled'] = false;
 check('disabled no run', Scheduler::decide($job, $state, $now), null);
+
+// Tags.
+$tagInput = $input;
+$tagInput['tags'] = ['enabled' => true, 'title' => '{show} du {date:DD/MM/YYYY}', 'artist' => ' Radio X ', 'album' => '', 'genre' => ''];
+$tagJob = Job::normalize($tagInput, null);
+check('tags kept', $tagJob['tags']['title'], '{show} du {date:DD/MM/YYYY}');
+check('tag values', Tagger::values($tagJob, 'mat_260305.mp3', 1, $d), ['title' => 'Matinale du 05/03/2026', 'artist' => 'Radio X']);
+check('tags disabled', Tagger::values($job2, 'a.mp3', 1, $d), []);
+check('tags describe', Tagger::describe(['title' => 'A', 'genre' => 'B']), 'Titre « A », Genre « B »');
+try {
+    $empty = $input;
+    $empty['tags'] = ['enabled' => true];
+    Job::normalize($empty, null);
+    check('empty tags refused', false, true);
+} catch (InvalidArgumentException) {
+    check('empty tags refused', true, true);
+}
+check('old job without tags', Tagger::values(array_diff_key($job2, ['tags' => 1]), 'a.mp3', 1, $d), []);
 
 echo $failures === 0 ? "\nTous les tests réussis.\n" : "\n$failures test(s) en échec.\n";
 exit($failures === 0 ? 0 : 1);

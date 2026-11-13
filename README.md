@@ -17,6 +17,7 @@ Chaque station reçoit une nouvelle entrée **« Téléchargements auto »** dan
 - **Date dans le nom du fichier.** Une case à cocher active ce mode. On choisit le format de la date (`YYYYMMDD`, `DD-MM-YYYY`…) et la date recherchée (le jour même, la veille, etc.).
 - **Renommage facultatif.** On peut donner un nom fixe (par exemple `Matinale.mp3`, remplacé à chaque diffusion) ou un nom avec date (`Matinale {date:DD-MM-YYYY}`).
 - **Destination.** Le fichier va dans un dossier de la médiathèque, avec un explorateur de dossiers. Il peut aussi être ajouté automatiquement à une playlist.
+- **Tags facultatifs :** titre, artiste, album et genre peuvent être remplacés, avec date et nom de l'émission si besoin (par exemple `{show} du {date:DD/MM/YYYY}`).
 - **Fichier déjà présent :** il peut être remplacé, gardé en double ou ignoré.
 - **Planification :** plusieurs horaires par émission, dans le fuseau horaire de la station.
 - **Nouveaux essais.** Si le fichier n'est pas encore en ligne, ou s'il est identique au précédent, le plugin réessaie toutes les X minutes.
@@ -69,7 +70,7 @@ Le programme de mise à jour d'AzuraCast (`./docker.sh update`) ne met pas ce pl
 
 ## Utilisation
 
-Ouvrez une station, puis **Téléchargements auto** et **Ajouter une émission**. Il faut l'autorisation « Gérer les médias » de la station. La fenêtre comporte cinq onglets :
+Ouvrez une station, puis **Téléchargements auto** et **Ajouter une émission**. Il faut l'autorisation « Gérer les médias » de la station. La fenêtre comporte six onglets :
 
 | Onglet | Contenu |
 | --- | --- |
@@ -77,6 +78,7 @@ Ouvrez une station, puis **Téléchargements auto** et **Ajouter une émission**
 | Source | FTP/FTPS, SFTP ou URL ; hôte, port, utilisateur, mot de passe ou clé, répertoire distant |
 | Fichier | Nom ou modèle du fichier distant, date dans le nom |
 | Destination | Dossier de la médiathèque, renommage, fichier existant, playlist |
+| Tags | Titre, artiste, album, genre (facultatif ; un champ vide garde la valeur d'origine) |
 | Planification | Jours et heures, nouveaux essais |
 
 Un aperçu montre en direct le fichier recherché et le nom sous lequel il sera enregistré. Utilisez **Tester la connexion** avant d'enregistrer.
@@ -108,6 +110,8 @@ Les autres caractères sont recopiés tels quels. Par exemple, `DD-MM-YYYY` donn
 | `{n}` | nouveau nom | numéro du fichier quand plusieurs sont téléchargés |
 
 Si le nouveau nom n'a pas d'extension, l'extension d'origine est ajoutée.
+
+Les mêmes variables (sauf `{ext}`) s'utilisent dans l'onglet **Tags**. Les tags sont écrits dans le fichier pour les formats MP3, FLAC et OGG. Pour les autres formats (M4A, AAC, WAV…), AzuraCast ne sait pas modifier le fichier : les valeurs sont alors enregistrées seulement dans la médiathèque d'AzuraCast, ce qui suffit pour l'affichage et l'annonce à l'antenne. Si AzuraCast relit un jour le fichier (par exemple après une modification manuelle), il reprendra les tags d'origine de ce fichier.
 
 ### Exemples
 

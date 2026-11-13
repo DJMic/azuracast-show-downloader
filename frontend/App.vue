@@ -157,6 +157,12 @@
                                     Renommé : {{ job.target.rename_pattern }}
                                 </div>
                                 <div
+                                    v-if="job.tags && job.tags.enabled"
+                                    class="text-body-secondary"
+                                >
+                                    Tags modifiés : {{ tagFields(job) }}
+                                </div>
+                                <div
                                     v-if="playlistName(job.target.playlist_id)"
                                     class="text-body-secondary"
                                 >
@@ -353,7 +359,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { createApi } from "./api.js";
 import JobModal from "./JobModal.vue";
-import { DAYS, emptyJob } from "./defaults.js";
+import { DAYS, TAG_FIELDS, emptyJob } from "./defaults.js";
 
 const props = defineProps({
     base: { type: String, required: true },
@@ -486,6 +492,10 @@ function daysLabel(days) {
     if (days.join() === "1,2,3,4,5") return "Du lundi au vendredi";
     if (days.join() === "6,7") return "Le week-end";
     return days.map((d) => DAYS[d - 1].short).join(", ");
+}
+
+function tagFields(job) {
+    return TAG_FIELDS.filter((f) => (job.tags[f.key] || "").trim() !== "").map((f) => f.label.toLowerCase()).join(", ");
 }
 
 function playlistName(id) {

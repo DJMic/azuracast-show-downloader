@@ -655,6 +655,56 @@
                         <preview-box :lines="previewLines" />
                     </div>
 
+                    <!-- Tags -->
+                    <div v-show="activeTab === 'tags'">
+                        <div class="form-check form-switch">
+                            <input
+                                id="sd-tags"
+                                v-model="form.tags.enabled"
+                                class="form-check-input"
+                                type="checkbox"
+                            >
+                            <label
+                                class="form-check-label fw-semibold"
+                                for="sd-tags"
+                            >Modifier les tags du fichier téléchargé</label>
+                        </div>
+                        <div class="form-text mb-3">
+                            Remplacez le titre, l'artiste, l'album ou le genre. Un champ laissé vide garde la valeur
+                            d'origine du fichier. Ce sont ces informations qu'AzuraCast affiche et annonce à l'antenne.
+                        </div>
+                        <template v-if="form.tags.enabled">
+                            <div class="row g-3 mb-2">
+                                <div
+                                    v-for="field in TAG_FIELDS"
+                                    :key="field.key"
+                                    class="col-md-6"
+                                >
+                                    <label
+                                        class="form-label"
+                                        :for="`sd-tag-${field.key}`"
+                                    >{{ field.label }}</label>
+                                    <input
+                                        :id="`sd-tag-${field.key}`"
+                                        v-model="form.tags[field.key]"
+                                        type="text"
+                                        class="form-control"
+                                        maxlength="255"
+                                        :placeholder="`Inchangé — ex. : ${field.placeholder}`"
+                                    >
+                                </div>
+                            </div>
+                            <div class="form-text mb-3">
+                                Variables : <code>{date}</code>, <code>{date:DD/MM/YYYY}</code> (autre format),
+                                <code>{show}</code> (nom de l'émission), <code>{original}</code> (nom du fichier
+                                d'origine sans extension), <code>{n}</code> (numéro du fichier).
+                                Les tags sont écrits dans les fichiers MP3, FLAC et OGG. Pour les autres formats
+                                (M4A, AAC, WAV…), ils sont enregistrés seulement dans AzuraCast.
+                            </div>
+                            <preview-box :lines="previewLines" />
+                        </template>
+                    </div>
+
                     <!-- Planification -->
                     <div v-show="activeTab === 'schedule'">
                         <p class="text-body-secondary small">
@@ -806,6 +856,12 @@
                                 > ({{ formatSize(file.size) }})</span>
                                 <template v-if="file.selected">
                                     → <code>/{{ file.target }}</code>
+                                    <div
+                                        v-if="file.tags && Object.keys(file.tags).length"
+                                        class="text-body-secondary"
+                                    >
+                                        Tags : {{ describeTags(file.tags) }}
+                                    </div>
                                 </template>
                             </li>
                         </ul>
@@ -861,8 +917,8 @@
 
 <script setup>
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { DATE_FORMATS, DAYS } from "./defaults.js";
-import { nameDate, render, targetPath } from "./naming.js";
+import { DATE_FORMATS, DAYS, TAG_FIELDS, emptyTags } from "./defaults.js";
+import { nameDate, render, splitName, targetPath } from "./naming.js";
 
 const props = defineProps({
     job: { type: Object, required: true },
@@ -872,6 +928,8 @@ const props = defineProps({
 const emit = defineEmits(["close", "saved"]);
 
 const form = reactive(JSON.parse(JSON.stringify(props.job)));
+// Jobs saved with version 1.0 have no tag settings yet.
+form.tags = { ...emptyTags(), ...(form.tags || {}) };
 const originalName = props.job.name;
 
 // Secrets: an untouched field keeps the stored value (sent as null).
@@ -910,6 +968,7 @@ const tabs = [
     { key: "source", label: "Source" },
     { key: "file", label: "Fichier" },
     { key: "target", label: "Destination" },
+    { key: "tags", label: "Tags" },
     { key: "schedule", label: "Planification" },
 ];
 const activeTab = ref("general");
@@ -965,6 +1024,15 @@ const previewLines = computed(() => {
         if (!original.includes(".")) original += ".mp3";
     }
     lines.push(["Enregistré sous", `/${targetPath(form, original, 1, date)}`]);
+    if (form.tags.enabled) {
+        const [base] = splitName(original);
+        for (const field of TAG_FIELDS) {
+            const pattern = (form.tags[field.key] || "").trim();
+            if (!pattern) continue;
+            const value = render(pattern, { original: base, show: form.name, n: 1 }, date, form.file.date_format || "YYYYMMDD");
+            lines.push([field.label, value]);
+        }
+    }
     return lines;
 });
 
@@ -1022,6 +1090,7 @@ const TAB_HINTS = [
     [/hôte|utilisateur|url|répertoire distant|chiffrement|source/i, "source"],
     [/fichier distant|date/i, "file"],
     [/dossier|nouveau nom|playlist/i, "target"],
+    [/tag/i, "tags"],
     [/heure|horaire|jour/i, "schedule"],
 ];
 function showError(message) {
@@ -1058,6 +1127,10 @@ async function test() {
 
 function close() {
     emit("close");
+}
+
+function describeTags(tags) {
+    return TAG_FIELDS.filter((f) => tags[f.key]).map((f) => `${f.label} « ${tags[f.key]} »`).join(", ");
 }
 
 function formatSize(bytes) {

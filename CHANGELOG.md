@@ -1,5 +1,13 @@
 # Journal des modifications
 
+## 1.1.0 – 2026-11-13
+
+- Nouvel onglet « Tags » : modification facultative du titre, de l'artiste, de l'album et du genre
+  du fichier téléchargé, avec les variables {date}, {date:FORMAT}, {show}, {original} et {n}.
+  Les tags sont écrits dans les fichiers MP3, FLAC et OGG ; pour les autres formats, ils sont
+  enregistrés dans AzuraCast uniquement.
+- Le test de connexion et l'aperçu affichent les tags qui seront appliqués.
+
 ## 1.0.0 – 2026-11-13
 
 Première version.

@@ -16,6 +16,7 @@ use InvalidArgumentException;
  *              encryption: none|explicit|implicit, passive, verify_tls, remote_dir, url],
  *   file   => [pattern, select: newest|all, date_enabled, date_format, date_offset],
  *   target => [directory, rename_enabled, rename_pattern, on_exists: overwrite|skip|rename, playlist_id],
+ *   tags   => [enabled, title, artist, album, genre]   (empty field = tag left unchanged),
  *   schedule => [slots: [[days: [1..7], time: "HH:MM"]], retry_interval, retry_count, skip_unchanged],
  * ]
  */
@@ -38,6 +39,7 @@ final class Job
         $file = self::arr($input['file'] ?? []);
         $target = self::arr($input['target'] ?? []);
         $schedule = self::arr($input['schedule'] ?? []);
+        $tags = self::arr($input['tags'] ?? []);
 
         $name = self::str($input['name'] ?? '', 120);
         if ($name === '') {
@@ -157,6 +159,17 @@ final class Job
                 : (int)$playlistId,
         ];
 
+        $normalizedTags = ['enabled' => self::bool($tags['enabled'] ?? false)];
+        foreach (Tagger::FIELDS as $field) {
+            $normalizedTags[$field] = self::str($tags[$field] ?? '', 255);
+        }
+        if (
+            $normalizedTags['enabled']
+            && implode('', array_map(static fn(string $f): string => $normalizedTags[$f], Tagger::FIELDS)) === ''
+        ) {
+            throw new InvalidArgumentException('Remplissez au moins un tag (titre, artiste, album ou genre) ou décochez la modification des tags.');
+        }
+
         $slots = [];
         foreach (self::arr($schedule['slots'] ?? []) as $slot) {
             $slot = self::arr($slot);
@@ -194,6 +207,7 @@ final class Job
             'source' => $normalizedSource,
             'file' => $normalizedFile,
             'target' => $normalizedTarget,
+            'tags' => $normalizedTags,
             'schedule' => $normalizedSchedule,
             'created_at' => (int)($existing['created_at'] ?? time()),
             'updated_at' => time(),

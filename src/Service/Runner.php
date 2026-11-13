@@ -36,6 +36,7 @@ final class Runner
         private readonly MediaProcessor $mediaProcessor,
         private readonly ReloadableEntityManagerInterface $em,
         private readonly StationPlaylistMediaRepository $playlistMediaRepo,
+        private readonly Tagger $tagger,
         private readonly LoggerInterface $logger
     ) {
     }
@@ -113,6 +114,7 @@ final class Runner
                     'mtime' => $info['mtime'],
                     'selected' => true,
                     'target' => self::targetPath($job, $info['name'], 1, $date),
+                    'tags' => Tagger::values($job, $info['name'], 1, $date),
                 ]],
                 'total' => 1,
             ];
@@ -129,9 +131,11 @@ final class Runner
             $i = 0;
             foreach ($matched as $file) {
                 $isSelected = in_array($file->name, $selectedNames, true);
+                $number = $isSelected ? ++$i : 0;
                 $files[] = $file->toArray() + [
                     'selected' => $isSelected,
-                    'target' => $isSelected ? self::targetPath($job, $file->name, ++$i, $date) : null,
+                    'target' => $isSelected ? self::targetPath($job, $file->name, $number, $date) : null,
+                    'tags' => $isSelected ? Tagger::values($job, $file->name, $number, $date) : [],
                 ];
             }
 
@@ -227,11 +231,13 @@ final class Runner
             $imported = [];
             $skipped = [];
             $warnings = [];
+            $notes = [];
+            $tagSummary = null;
             $index = 0;
             $fs = $this->filesystems->getMediaFilesystem($station);
             $storageLocation = $station->media_storage_location;
 
-            foreach ($downloads as $download) {
+            foreach ($downloads as $i => $download) {
                 $index++;
                 $path = self::targetPath($job, $download['original'], $index, $date);
 
@@ -245,6 +251,25 @@ final class Runner
                     }
                 }
 
+                // Optional tags: written into the local copy before the import.
+                $tagValues = Tagger::values($job, $download['original'], $index, $date);
+                if ($tagValues !== []) {
+                    [, $ext] = Naming::splitName($path);
+                    $tagged = $download['temp'] . '.' . ($ext !== '' ? $ext : 'bin');
+                    if (@rename($download['temp'], $tagged)) {
+                        $downloads[$i]['temp'] = $download['temp'] = $tagged;
+                    }
+                    try {
+                        $note = $this->tagger->writeFile($download['temp'], $tagValues);
+                    } catch (Throwable $e) {
+                        $note = 'Tags non écrits dans le fichier (' . $e->getMessage() . ') ; ils sont enregistrés dans AzuraCast.';
+                    }
+                    if ($note !== null) {
+                        $notes[] = $note;
+                    }
+                    $tagSummary ??= Tagger::describe($tagValues);
+                }
+
                 $size = (int)filesize($download['temp']);
                 if (!$storageLocation->canHoldFile($size)) {
                     throw new RuntimeException('Espace de stockage de la station insuffisant pour « ' . $path . ' ».');
@@ -252,6 +277,16 @@ final class Runner
 
                 $media = $this->mediaProcessor->processAndUpload($storageLocation, $path, $download['temp']);
                 $imported[] = $path;
+
+                if ($media instanceof StationMedia && $tagValues !== []) {
+                    try {
+                        Tagger::applyToMedia($media, $tagValues);
+                        $this->em->persist($media);
+                        $this->em->flush();
+                    } catch (Throwable $e) {
+                        $warnings[] = 'Tags non enregistrés dans AzuraCast : ' . $e->getMessage();
+                    }
+                }
 
                 if ($media instanceof StationMedia && !empty($job['target']['playlist_id'])) {
                     try {
@@ -276,6 +311,12 @@ final class Runner
                 : count($imported) . ' fichiers importés.';
             if ($skipped !== []) {
                 $message .= ' Déjà présents (non remplacés) : ' . implode(', ', $skipped);
+            }
+            if ($tagSummary !== null && $imported !== []) {
+                $message .= ' Tags : ' . $tagSummary . '.';
+            }
+            if ($notes !== []) {
+                $message .= ' Remarque : ' . implode(' ', array_unique($notes));
             }
             if ($warnings !== []) {
                 $message .= ' Attention : ' . implode(' ', array_unique($warnings));
