@@ -139,15 +139,25 @@ final class Runner
                 ];
             }
 
+            // Listing a file does not prove that this account may download it: read its first byte.
+            $readError = null;
+            if ($selected !== [] && $client instanceof FtpSource) {
+                $readError = $client->checkReadable($selected[0]);
+            }
+
             return [
-                'success' => $selected !== [],
-                'message' => $selected !== []
-                    ? sprintf('Connexion réussie. %d fichier(s) correspondent au modèle « %s ».', count($matched), $pattern)
+                'success' => $selected !== [] && $readError === null,
+                'message' => $readError ?? ($selected !== []
+                    ? sprintf(
+                        'Connexion réussie. %d fichier(s) correspondent au modèle « %s » et le téléchargement est autorisé.',
+                        count($matched),
+                        $pattern
+                    )
                     : sprintf(
                         'Connexion réussie, mais aucun fichier ne correspond au modèle « %s » (%d fichier(s) dans le répertoire).',
                         $pattern,
                         count($all)
-                    ),
+                    )),
                 'source' => $pattern,
                 'files' => array_slice($files, 0, 100),
                 'available' => $selected === []

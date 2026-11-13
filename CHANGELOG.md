@@ -1,5 +1,13 @@
 # Journal des modifications
 
+## 1.1.1 – 2026-11-13
+
+- FTP : quand le serveur refuse l'envoi d'un fichier (RETR 550) alors qu'il le liste, le
+  téléchargement est réessayé avec d'autres façons d'indiquer le chemin et une nouvelle connexion.
+- FTP : le message d'erreur cite la réponse exacte du serveur et explique les causes possibles.
+- « Tester la connexion » vérifie maintenant que le compte FTP a le droit de télécharger le fichier.
+- Le statut « Introuvable » devient « Indisponible » (fichier absent ou refusé par le serveur).
+
 ## 1.1.0 – 2026-11-13
 
 - Nouvel onglet « Tags » : modification facultative du titre, de l'artiste, de l'album et du genre

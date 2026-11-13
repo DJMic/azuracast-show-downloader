@@ -21,6 +21,7 @@ final class FtpSource implements DirectorySourceInterface
     private const int E_OPERATION_TIMEDOUT = 28;
     private const int E_LOGIN_DENIED = 67;
     private const int E_REMOTE_FILE_NOT_FOUND = 78;
+    private const int E_PARTIAL_FILE = 18;
 
     private ?CurlHandle $curl = null;
 
@@ -91,19 +92,88 @@ final class FtpSource implements DirectorySourceInterface
         if ($handle === false) {
             throw new SourceException('Impossible de créer le fichier temporaire ' . $localPath);
         }
+
         try {
-            $this->request($this->url($file->name), [
+            $this->retrieve($file, [
                 CURLOPT_FILE => $handle,
                 CURLOPT_TIMEOUT => 0,
                 CURLOPT_LOW_SPEED_LIMIT => 1,
                 CURLOPT_LOW_SPEED_TIME => 120,
-            ]);
+            ], static function () use ($handle): void {
+                ftruncate($handle, 0);
+                rewind($handle);
+            });
         } catch (SourceException $e) {
             fclose($handle);
             @unlink($localPath);
             throw $e;
         }
         fclose($handle);
+    }
+
+    /**
+     * Reads the first byte of the file: proves that the server really lets this account download it.
+     *
+     * @return string|null Null when readable, otherwise the reason.
+     */
+    public function checkReadable(RemoteFile $file): ?string
+    {
+        try {
+            $this->retrieve($file, [
+                CURLOPT_RANGE => '0-0',
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 60,
+            ]);
+        } catch (SourceException $e) {
+            return $e->getMessage();
+        }
+
+        return null;
+    }
+
+    /**
+     * RETR with fallbacks: some servers refuse the default "CWD into each folder, then RETR"
+     * sequence, or refuse RETR on a connection that already sent many commands.
+     */
+    private function retrieve(RemoteFile $file, array $options, ?callable $beforeRetry = null): void
+    {
+        $attempts = [
+            [CURLOPT_FTP_FILEMETHOD => CURLFTPMETHOD_MULTICWD],
+            [CURLOPT_FTP_FILEMETHOD => CURLFTPMETHOD_NOCWD],
+            [CURLOPT_FTP_FILEMETHOD => CURLFTPMETHOD_SINGLECWD],
+        ];
+        $first = null;
+
+        foreach ($attempts as $i => $method) {
+            if ($i > 0) {
+                $this->close(); // fresh connection
+                if ($beforeRetry !== null) {
+                    $beforeRetry();
+                }
+            }
+            try {
+                $this->request($this->url($file->name), $method + $options);
+
+                return;
+            } catch (SourceException $e) {
+                $first ??= $e;
+                if (!in_array($e->curlCode, [self::E_FTP_COULDNT_RETR_FILE, self::E_REMOTE_FILE_NOT_FOUND], true)) {
+                    throw $e;
+                }
+            }
+        }
+
+        $reply = $first->serverReply !== '' ? $first->serverReply : 'RETR 550';
+        $e = SourceException::notFound(sprintf(
+            'Le serveur FTP refuse d\'envoyer « %s » alors que ce fichier apparaît dans le répertoire '
+            . '(réponse du serveur : %s). Causes habituelles : le compte FTP n\'a pas le droit de lecture '
+            . '(compte limité au dépôt de fichiers), ou le fichier est encore en cours d\'envoi sur le serveur. '
+            . 'Vérifiez en téléchargeant ce fichier avec FileZilla et le même compte.',
+            $file->name,
+            $reply
+        ));
+        $e->serverReply = $first->serverReply;
+        throw $e;
     }
 
     public function close(): void
@@ -149,17 +219,51 @@ final class FtpSource implements DirectorySourceInterface
             $common[CURLOPT_FTPPORT] = '-';
         }
 
+        // The protocol log is only used to quote the server's last error reply ("< 550 ...").
+        $log = fopen('php://temp', 'w+b');
+        if ($log !== false) {
+            $common[CURLOPT_VERBOSE] = true;
+            $common[CURLOPT_STDERR] = $log;
+        }
+
         curl_setopt_array($curl, $common);
         curl_setopt_array($curl, $options);
 
-        $result = curl_exec($curl);
-        if ($result === false) {
+        try {
+            $result = curl_exec($curl);
             $errno = curl_errno($curl);
-            $error = curl_error($curl);
-            throw self::error($errno, $error);
+
+            // A partial read (range request for the readability check) is not an error.
+            if ($result === false && !(isset($options[CURLOPT_RANGE]) && $errno === self::E_PARTIAL_FILE)) {
+                $e = self::error($errno, curl_error($curl));
+                $e->curlCode = $errno;
+                $e->serverReply = $log !== false ? self::lastErrorReply($log) : '';
+                throw $e;
+            }
+        } finally {
+            if ($log !== false) {
+                fclose($log);
+            }
         }
 
-        return $result;
+        return $result === false ? '' : $result;
+    }
+
+    /**
+     * @param resource $log
+     */
+    private static function lastErrorReply($log): string
+    {
+        rewind($log);
+        $reply = '';
+        while (($line = fgets($log)) !== false) {
+            // Only server replies are kept; the commands sent (with the password) are ignored.
+            if (preg_match('/^< ([45]\d\d[ -].*)$/', rtrim($line), $m)) {
+                $reply = mb_substr(trim($m[1]), 0, 200);
+            }
+        }
+
+        return $reply;
     }
 
     private static function error(int $errno, string $error): SourceException

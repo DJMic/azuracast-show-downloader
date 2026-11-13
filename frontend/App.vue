@@ -517,7 +517,7 @@ const STATUS = {
     success: ["Réussi", "text-bg-success"],
     skipped: ["Déjà présent", "text-bg-secondary"],
     unchanged: ["Inchangé", "text-bg-warning"],
-    not_found: ["Introuvable", "text-bg-warning"],
+    not_found: ["Indisponible", "text-bg-warning"],
     error: ["Erreur", "text-bg-danger"],
 };
 const statusLabel = (status) => STATUS[status]?.[0] || status;
