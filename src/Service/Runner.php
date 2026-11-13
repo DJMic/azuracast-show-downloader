@@ -11,6 +11,7 @@ use App\Entity\Station;
 use App\Entity\StationMedia;
 use App\Entity\StationPlaylist;
 use App\Entity\StationPlaylistMedia;
+use App\Flysystem\ExtendedFilesystemInterface;
 use App\Flysystem\StationFilesystems;
 use App\Media\MediaProcessor;
 use DateTimeImmutable;
@@ -285,7 +286,24 @@ final class Runner
                     throw new RuntimeException('Espace de stockage de la station insuffisant pour « ' . $path . ' ».');
                 }
 
-                $media = $this->mediaProcessor->processAndUpload($storageLocation, $path, $download['temp']);
+                if ($fs->isLocal()) {
+                    $this->checkLocalDestination($fs, $path, $download['temp']);
+                }
+
+                try {
+                    $media = $this->mediaProcessor->processAndUpload($storageLocation, $path, $download['temp']);
+                } catch (Throwable $e) {
+                    if (str_starts_with($e->getMessage(), 'Unable to copy file') && $fs->isLocal()) {
+                        throw new RuntimeException(
+                            'Copie impossible vers la médiathèque (' . $e->getMessage() . '). '
+                            . 'Vérifiez les droits du dossier et l\'espace disque. '
+                            . self::permissionHint($fs->getLocalPath('')),
+                            0,
+                            $e
+                        );
+                    }
+                    throw $e;
+                }
                 $imported[] = $path;
 
                 if ($media instanceof StationMedia && $tagValues !== []) {
@@ -404,6 +422,75 @@ final class Runner
     private function tempPath(string $dir): string
     {
         return $dir . '/' . bin2hex(random_bytes(8)) . '.part';
+    }
+
+    /**
+     * Local storage only: explains permission or disk-space problems before AzuraCast tries the copy.
+     */
+    private function checkLocalDestination(ExtendedFilesystemInterface $fs, string $path, string $tempFile): void
+    {
+        $dest = $fs->getLocalPath($path);
+        $dir = dirname($dest);
+        $root = $fs->getLocalPath('');
+
+        // The folder may not exist yet: AzuraCast creates it inside the closest existing folder.
+        $existing = $dir;
+        while (!is_dir($existing) && $existing !== dirname($existing)) {
+            $existing = dirname($existing);
+        }
+        if (!is_writable($existing)) {
+            throw new RuntimeException(sprintf(
+                'AzuraCast n\'a pas le droit d\'écrire dans le dossier « %s » (propriétaire : %s). %s',
+                $existing,
+                self::ownerOf($existing),
+                self::permissionHint($root)
+            ));
+        }
+
+        // An old file that AzuraCast may not overwrite (copied as root, for example) is removed first.
+        if (is_file($dest) && !is_writable($dest)) {
+            if (!is_writable($dir) || !@unlink($dest)) {
+                throw new RuntimeException(sprintf(
+                    'Le fichier existant « %s » ne peut pas être remplacé (propriétaire : %s). %s',
+                    $dest,
+                    self::ownerOf($dest),
+                    self::permissionHint($root)
+                ));
+            }
+        }
+
+        $size = (int)@filesize($tempFile);
+        $free = @disk_free_space($existing);
+        if ($free !== false && $size > 0 && $free < $size + 10 * 1024 * 1024) {
+            throw new RuntimeException(sprintf(
+                'Espace disque insuffisant sur le serveur pour « %s » (%d Mo libres, %d Mo nécessaires).',
+                $path,
+                (int)($free / 1048576),
+                (int)ceil($size / 1048576)
+            ));
+        }
+    }
+
+    private static function permissionHint(string $mediaRoot): string
+    {
+        return 'Pour corriger, lancez sur le serveur : cd /var/azuracast && docker compose exec web chown -R '
+            . 'azuracast:azuracast ' . escapeshellarg(rtrim($mediaRoot, '/'));
+    }
+
+    private static function ownerOf(string $path): string
+    {
+        $uid = @fileowner($path);
+        if ($uid === false) {
+            return 'inconnu';
+        }
+        if (function_exists('posix_getpwuid')) {
+            $info = @posix_getpwuid($uid);
+            if (is_array($info) && isset($info['name'])) {
+                return $info['name'] . ' (' . $uid . ')';
+            }
+        }
+
+        return 'utilisateur ' . $uid;
     }
 
     private function freePath(\League\Flysystem\FilesystemOperator $fs, string $path): string

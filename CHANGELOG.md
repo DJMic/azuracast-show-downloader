@@ -1,5 +1,13 @@
 # Journal des modifications
 
+## 1.1.2 – 2026-11-13
+
+- Stockage local : avant l'import, le plugin vérifie que AzuraCast peut écrire dans le dossier de
+  destination et qu'il reste assez d'espace disque, et donne la commande pour corriger les droits.
+- Un ancien fichier en lecture seule (copié par root, par exemple) est supprimé avant d'être remplacé
+  lorsque le dossier le permet.
+- Message explicite à la place de « Unable to copy file ».
+
 ## 1.1.1 – 2026-11-13
 
 - FTP : quand le serveur refuse l'envoi d'un fichier (RETR 550) alors qu'il le liste, le
