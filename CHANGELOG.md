@@ -1,5 +1,12 @@
 # Journal des modifications
 
+## 1.1.3 – 2026-11-14
+
+- Compatibilité avec les autres plugins qui ajoutent une entrée sous « Médias » (par exemple
+  Sweepers) : les deux scripts déplaçaient leur entrée sans arrêt, ce qui rendait les deux onglets
+  inutilisables. L'entrée « Téléchargements auto » se place maintenant après celles des autres plugins.
+- Le clic sur l'entrée du menu fonctionne même si le menu est reconstruit.
+
 ## 1.1.2 – 2026-11-13
 
 - Stockage local : avant l'import, le plugin vérifie que AzuraCast peut écrire dans le dossier de

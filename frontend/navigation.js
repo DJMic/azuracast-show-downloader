@@ -121,10 +121,18 @@ function mount(document, window, basePath, version) {
             return;
         }
 
+        // Other plugins (e.g. Sweepers) also insert their entry right after "Media". To avoid two
+        // scripts moving their entries back and forth forever, ours goes after every entry that
+        // another plugin has added after "Media" (plugin entries are the <li> that have an id).
+        let anchor = mediaItem;
+        for (let next = mediaItem.nextElementSibling; next?.matches("li.nav-item[id]"); next = next.nextElementSibling) {
+            if (next.id !== ITEM_ID) anchor = next;
+        }
+
         const href = `${station.path}/show-downloader`;
         const active = window.location.pathname.replace(/\/$/, "") === href;
-        if (existing && existing.previousElementSibling === mediaItem
-            && existing.dataset.signature === `${href}|${active}`) {
+        if (existing && existing.dataset.signature === `${href}|${active}`) {
+            if (existing.previousElementSibling !== anchor) anchor.after(existing);
             return;
         }
         existing?.remove();
@@ -155,17 +163,8 @@ function mount(document, window, basePath, version) {
         label.textContent = "Téléchargements auto";
 
         link.append(svg, label);
-        link.addEventListener("click", (event) => {
-            if (!router || event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-                return;
-            }
-            event.preventDefault();
-            document.getElementById(ERROR_ID)?.remove();
-            router.push(href.slice(basePath.length)).catch(showError);
-        });
-
         item.append(link);
-        mediaItem.after(item);
+        anchor.after(item);
     }
 
     function schedule() {
@@ -173,6 +172,20 @@ function mount(document, window, basePath, version) {
             frame = window.requestAnimationFrame(refresh);
         }
     }
+
+    // Delegated click handler: keeps working even if the menu entry is rebuilt.
+    document.addEventListener("click", (event) => {
+        const link = event.target.closest?.(`#${ITEM_ID} a[href]`);
+        if (!router || !link || event.defaultPrevented || event.button > 0
+            || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+            return;
+        }
+        const url = new URL(link.href, window.location.href);
+        if (url.origin !== window.location.origin) return;
+        event.preventDefault();
+        document.getElementById(ERROR_ID)?.remove();
+        router.push(url.pathname.slice(basePath.length)).catch(showError);
+    });
 
     new window.MutationObserver(schedule).observe(document.body, {childList: true, subtree: true});
     document.addEventListener("vue-ready", schedule);
