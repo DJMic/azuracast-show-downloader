@@ -89,8 +89,8 @@ final class Executor
                 $decision['trigger'] !== 'manual'
             );
         } catch (Throwable $e) {
-            $this->logger->error('Show downloader: ' . $e->getMessage(), ['exception' => $e]);
-            $result = ['status' => 'error', 'message' => $e->getMessage(), 'files' => [], 'hash' => null];
+            $this->logger->error('Show downloader: ' . Database::describe($e), ['exception' => $e]);
+            $result = ['status' => 'error', 'message' => Database::describe($e), 'files' => [], 'hash' => null];
         }
 
         $this->record($station, $job, $decision, $result);

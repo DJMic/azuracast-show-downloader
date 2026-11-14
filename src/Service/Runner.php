@@ -38,6 +38,7 @@ final class Runner
         private readonly ReloadableEntityManagerInterface $em,
         private readonly StationPlaylistMediaRepository $playlistMediaRepo,
         private readonly Tagger $tagger,
+        private readonly Database $database,
         private readonly LoggerInterface $logger
     ) {
     }
@@ -245,6 +246,9 @@ final class Runner
             $notes = [];
             $tagSummary = null;
             $index = 0;
+            // The download may have lasted minutes: reconnect if needed and work on fresh records.
+            $this->database->prepare();
+            $station = $this->em->refetch($station);
             $fs = $this->filesystems->getMediaFilesystem($station);
             $storageLocation = $station->media_storage_location;
 
@@ -302,25 +306,55 @@ final class Runner
                             $e
                         );
                     }
-                    throw $e;
+                    if (!Database::isTransient($e)) {
+                        throw $e;
+                    }
+
+                    // Temporary database error. AzuraCast has already put the file in the media
+                    // library (it does so even when the database step fails): only the database
+                    // part is done again, on a clean connection.
+                    $this->logger->warning('Show downloader: database error, retrying: ' . Database::describe($e));
+                    $this->database->recover();
+                    $station = $this->em->refetch($station);
+                    $storageLocation = $station->media_storage_location;
+                    try {
+                        $media = $this->mediaProcessor->process($storageLocation, $path, true);
+                    } catch (Throwable $retry) {
+                        throw new RuntimeException(
+                            'Le fichier a bien été copié dans la médiathèque (« ' . $path . ' »), mais AzuraCast '
+                            . 'n\'a pas pu l\'enregistrer dans sa base de données : ' . Database::describe($retry)
+                            . '. Il apparaîtra après le prochain contrôle automatique des médias.',
+                            0,
+                            $retry
+                        );
+                    }
                 }
                 $imported[] = $path;
 
                 if ($media instanceof StationMedia && $tagValues !== []) {
                     try {
-                        Tagger::applyToMedia($media, $tagValues);
-                        $this->em->persist($media);
-                        $this->em->flush();
+                        $this->retryOnce(function () use ($media, $tagValues): void {
+                            $record = $this->em->refetch($media);
+                            Tagger::applyToMedia($record, $tagValues);
+                            $this->em->persist($record);
+                            $this->em->flush();
+                        });
                     } catch (Throwable $e) {
-                        $warnings[] = 'Tags non enregistrés dans AzuraCast : ' . $e->getMessage();
+                        $warnings[] = 'Tags non enregistrés dans AzuraCast : ' . Database::describe($e);
                     }
                 }
 
                 if ($media instanceof StationMedia && !empty($job['target']['playlist_id'])) {
                     try {
-                        $this->addToPlaylist($station, $media, (int)$job['target']['playlist_id']);
+                        $this->retryOnce(function () use ($station, $media, $job): void {
+                            $this->addToPlaylist(
+                                $this->em->refetch($station),
+                                $this->em->refetch($media),
+                                (int)$job['target']['playlist_id']
+                            );
+                        });
                     } catch (Throwable $e) {
-                        $warnings[] = $e->getMessage();
+                        $warnings[] = Database::describe($e);
                     }
                 }
             }
@@ -354,13 +388,16 @@ final class Runner
         } catch (SourceException $e) {
             return self::result($e->notFound ? 'not_found' : 'error', $e->getMessage());
         } catch (Throwable $e) {
-            $this->logger->error('Show downloader: ' . $e->getMessage(), [
+            if (Database::isTransient($e)) {
+                $this->database->recover(); // leaves a clean state for the next show
+            }
+            $this->logger->error('Show downloader: ' . Database::describe($e), [
                 'station' => $station->id,
                 'job' => $job['id'] ?? null,
                 'exception' => $e,
             ]);
 
-            return self::result('error', $e->getMessage());
+            return self::result('error', Database::describe($e));
         } finally {
             foreach ($downloads as $download) {
                 if (is_file($download['temp'])) {
@@ -491,6 +528,22 @@ final class Runner
         }
 
         return 'utilisateur ' . $uid;
+    }
+
+    /**
+     * Runs a database step; on a temporary database error, starts again once on a clean connection.
+     */
+    private function retryOnce(callable $step): void
+    {
+        try {
+            $step();
+        } catch (Throwable $e) {
+            if (!Database::isTransient($e)) {
+                throw $e;
+            }
+            $this->database->recover();
+            $step();
+        }
     }
 
     private function freePath(\League\Flysystem\FilesystemOperator $fs, string $path): string

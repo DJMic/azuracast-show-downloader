@@ -8,11 +8,13 @@ require __DIR__ . '/../src/Service/Naming.php';
 require __DIR__ . '/../src/Service/Job.php';
 require __DIR__ . '/../src/Service/Scheduler.php';
 require __DIR__ . '/../src/Service/Tagger.php';
+require __DIR__ . '/../src/Service/Database.php';
 
 use Plugin\AzuracastShowDownloader\Service\Job;
 use Plugin\AzuracastShowDownloader\Service\Naming;
 use Plugin\AzuracastShowDownloader\Service\Scheduler;
 use Plugin\AzuracastShowDownloader\Service\Tagger;
+use Plugin\AzuracastShowDownloader\Service\Database;
 
 $failures = 0;
 function check(string $label, mixed $actual, mixed $expected): void
@@ -123,6 +125,17 @@ try {
     check('empty tags refused', true, true);
 }
 check('old job without tags', Tagger::values(array_diff_key($job2, ['tags' => 1]), 'a.mp3', 1, $d), []);
+
+// Database errors.
+$savepoint = new RuntimeException(
+    'An exception occurred while executing a query: SQLSTATE[42000]: Syntax error or access violation: 1305 SAVEPOINT DOCTRINE_2 does not exist',
+    0,
+    new RuntimeException('SQLSTATE[40001]: Serialization failure: 1213 Deadlock found when trying to get lock')
+);
+check('savepoint is transient', Database::isTransient($savepoint), true);
+check('deadlock is transient', Database::isTransient(new RuntimeException('x', 0, new RuntimeException('Deadlock found when trying'))), true);
+check('other error not transient', Database::isTransient(new RuntimeException('File type cannot be processed.')), false);
+check('describe shows cause', str_contains(Database::describe($savepoint), 'cause : SQLSTATE[40001]'), true);
 
 echo $failures === 0 ? "\nTous les tests réussis.\n" : "\n$failures test(s) en échec.\n";
 exit($failures === 0 ? 0 : 1);

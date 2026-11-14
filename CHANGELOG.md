@@ -1,5 +1,15 @@
 # Journal des modifications
 
+## 1.1.4 – 2026-11-14
+
+- Correction de l'erreur « SAVEPOINT DOCTRINE_2 does not exist » lors de certains téléchargements.
+  La tâche planifiée gardait une transaction de base de données ouverte pendant toute la durée du
+  téléchargement ; MariaDB pouvait l'annuler entre-temps. Les stations sont maintenant parcourues
+  sans transaction et la connexion est vérifiée après chaque téléchargement.
+- En cas d'erreur temporaire de base de données (verrou, connexion perdue), l'enregistrement du
+  fichier, des tags et de l'ajout à la playlist est retenté une fois.
+- Les messages d'erreur de base de données indiquent aussi leur cause réelle.
+
 ## 1.1.3 – 2026-11-14
 
 - Compatibilité avec les autres plugins qui ajoutent une entrée sous « Médias » (par exemple

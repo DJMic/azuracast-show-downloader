@@ -6,6 +6,7 @@ namespace Plugin\AzuracastShowDownloader\Sync;
 
 use App\Entity\Station;
 use App\Sync\Task\AbstractTask;
+use Plugin\AzuracastShowDownloader\Service\Database;
 use Plugin\AzuracastShowDownloader\Service\Executor;
 use Throwable;
 
@@ -13,11 +14,16 @@ use Throwable;
  * Runs every minute inside AzuraCast's synchronization (azuracast:sync:run).
  * Declared as a long task: a download can take several minutes; AzuraCast's lock
  * prevents two runs from overlapping while other sync tasks keep running.
+ *
+ * Stations are NOT walked with AbstractTask::iterateStations(): that helper keeps a database
+ * transaction open while each station is processed, i.e. during the whole download, and MariaDB
+ * may roll it back in the meantime ("SAVEPOINT DOCTRINE_2 does not exist").
  */
 final class DownloadTask extends AbstractTask
 {
     public function __construct(
-        private readonly Executor $executor
+        private readonly Executor $executor,
+        private readonly Database $database
     ) {
     }
 
@@ -33,19 +39,29 @@ final class DownloadTask extends AbstractTask
 
     public function run(bool $force = false): void
     {
-        foreach ($this->iterateStations() as $station) {
-            /** @var Station $station */
-            if (!$station->is_enabled) {
-                continue;
-            }
+        $this->database->recover();
+
+        $ids = $this->em->createQuery(
+            <<<'DQL'
+                SELECT s.id FROM App\Entity\Station s WHERE s.is_enabled = 1
+            DQL
+        )->getSingleColumnResult();
+
+        foreach ($ids as $id) {
             try {
-                $this->executor->processStation($station);
+                $this->database->recover();
+                $station = $this->em->find(Station::class, (int)$id);
+                if ($station instanceof Station) {
+                    $this->executor->processStation($station);
+                }
             } catch (Throwable $e) {
-                $this->logger->error('Show downloader: ' . $e->getMessage(), [
-                    'station' => $station->id,
+                $this->logger->error('Show downloader: ' . Database::describe($e), [
+                    'station' => $id,
                     'exception' => $e,
                 ]);
             }
         }
+
+        $this->database->recover();
     }
 }
