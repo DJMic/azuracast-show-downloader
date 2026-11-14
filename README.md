@@ -21,6 +21,7 @@ Chaque station reçoit une nouvelle entrée **« Téléchargements auto »** dan
 - **Fichier déjà présent :** il peut être remplacé, gardé en double ou ignoré.
 - **Planification :** plusieurs horaires par émission, dans le fuseau horaire de la station.
 - **Nouveaux essais.** Si le fichier n'est pas encore en ligne, ou s'il est identique au précédent, le plugin réessaie toutes les X minutes.
+- **Export et import** des émissions vers une autre station ou une autre instance (fichier JSON).
 - **Tester la connexion.** Ce bouton montre les fichiers trouvés et le nom final, sans rien télécharger.
 - **Télécharger maintenant**, **Dupliquer**, **Historique**.
 
@@ -127,6 +128,21 @@ Les mêmes variables (sauf `{ext}`) s'utilisent dans l'onglet **Tags**. Les tags
 - Source : URL.
 - Destination : renommer en `Hebdo {date:YYYY-MM-DD}` pour garder un fichier par semaine.
 - Planification : le samedi à 08:00. Cochez « Considérer un fichier identique au précédent comme pas encore disponible » : le plugin attendra la nouvelle version au lieu de réimporter l'ancienne.
+
+## Exporter et importer des émissions
+
+Les boutons **Exporter** et **Importer** de la page « Téléchargements auto » copient les émissions d'une station vers une autre, sur la même instance AzuraCast ou sur une autre.
+
+- **Exporter** télécharge un fichier JSON avec toutes les émissions de la station. Cochez « Inclure les mots de passe et les clés SSH » pour une migration complète ; le fichier contient alors les mots de passe en clair, gardez-le en lieu sûr.
+- **Importer** lit ce fichier et affiche un aperçu avant toute modification. Pour chaque émission, vous pouvez :
+  - la sélectionner ou non ;
+  - changer son **dossier de destination** : le plugin indique si le dossier existe sur cette station. Le champ « Remplacer le début » modifie le chemin de toutes les émissions d'un coup (par exemple `Emissions` → `Podcasts`) ;
+  - choisir sa **playlist** : elle est retrouvée par son nom, sinon « Aucune » est proposé ;
+  - si une émission du **même nom** existe déjà, la remplacer ou ajouter une copie.
+
+Les dossiers absents sont créés à l'import si la case est cochée, sinon au premier téléchargement. Une nouvelle émission importée sans son mot de passe est **désactivée** : modifiez-la pour saisir le mot de passe, puis réactivez-la. Une émission qui en remplace une existante garde le mot de passe déjà enregistré.
+
+Les horaires sont importés tels quels et s'appliquent dans le fuseau horaire de la station de destination ; un avertissement s'affiche si les deux stations n'ont pas le même fuseau.
 
 ## Fonctionnement et dépannage
 

@@ -33,6 +33,28 @@ export function createApi(base) {
         return data;
     }
 
+    // Downloads the export through fetch so that an error is shown instead of being saved as a file.
+    async function exportFile(withSecrets) {
+        const url = new URL(`${base}/export`, window.location.origin);
+        url.searchParams.set("secrets", withSecrets ? "1" : "0");
+        const response = await fetch(url, {credentials: "same-origin"});
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.message || `Erreur du serveur (HTTP ${response.status}).`);
+        }
+        const disposition = response.headers.get("Content-Disposition") || "";
+        const name = disposition.match(/filename="([^"]+)"/)?.[1] || "telechargements-auto.json";
+        const blob = await response.blob();
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = name;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+        return name;
+    }
+
     return {
         state: () => request("/state"),
         folders: (dir) => request("/folders", {query: {dir}}),
@@ -42,5 +64,11 @@ export function createApi(base) {
         run: (id) => request(`/jobs/${encodeURIComponent(id)}/run`, {method: "POST", body: {}}),
         test: (job) => request("/test", {method: "POST", body: job}),
         clearHistory: () => request("/history/clear", {method: "POST", body: {}}),
+        importPreview: (data, choices) => request("/import/preview", {method: "POST", body: {data, choices}}),
+        importJobs: (data, choices, createDirectories) => request("/import", {
+            method: "POST",
+            body: {data, choices, create_directories: createDirectories},
+        }),
+        exportFile,
     };
 }

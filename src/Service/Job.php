@@ -215,6 +215,28 @@ final class Job
     }
 
     /**
+     * Scheduling state after a job is saved or imported: new, re-enabled or rescheduled jobs
+     * never catch up with past slots, and a new source forgets the last downloaded content.
+     */
+    public static function stateAfterSave(array $state, array $job, ?array $existing): array
+    {
+        if (
+            $existing === null
+            || ($job['enabled'] && !$existing['enabled'])
+            || $job['schedule']['slots'] !== $existing['schedule']['slots']
+        ) {
+            $state['not_before'] = time();
+            $state['attempts'] = 0;
+            unset($state['retry_at']);
+        }
+        if ($existing !== null && $job['source'] != $existing['source']) {
+            unset($state['last_hash']);
+        }
+
+        return $state;
+    }
+
+    /**
      * Job as sent to the browser: secrets are never returned.
      *
      * @param array<string, mixed> $job

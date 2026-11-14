@@ -1,5 +1,18 @@
 # Journal des modifications
 
+## 1.2.0 – 2026-11-14
+
+- Nouveaux boutons « Exporter » et « Importer » : copie des émissions d'une station vers une autre
+  station ou une autre instance AzuraCast, via un fichier JSON.
+- Export avec ou sans mots de passe et clés SSH. Les playlists sont exportées par leur nom.
+- Import avec aperçu : choix des émissions, du dossier de destination (vérifié sur la station,
+  remplacement du début du chemin pour toutes les émissions), de la playlist (retrouvée par son nom)
+  et de ce qu'il faut faire si une émission du même nom existe déjà (remplacer ou ajouter une copie).
+- Les dossiers absents peuvent être créés à l'import ; sinon ils le sont au premier téléchargement.
+- Une émission importée sans son mot de passe est désactivée jusqu'à ce qu'il soit saisi ; une
+  émission remplacée garde le mot de passe déjà enregistré.
+- Avertissement si le fuseau horaire de la station d'origine est différent.
+
 ## 1.1.4 – 2026-11-14
 
 - Correction de l'erreur « SAVEPOINT DOCTRINE_2 does not exist » lors de certains téléchargements.

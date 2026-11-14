@@ -64,6 +64,21 @@
                 >
                     Actualiser
                 </button>
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    :disabled="jobs.length === 0"
+                    @click="transfer = 'export'"
+                >
+                    Exporter
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    @click="transfer = 'import'"
+                >
+                    Importer
+                </button>
             </div>
 
             <div
@@ -344,6 +359,15 @@
             Show Downloader v{{ version }}
         </p>
 
+        <transfer-modal
+            v-if="transfer"
+            :mode="transfer"
+            :api="api"
+            :playlists="playlists"
+            @close="transfer = null"
+            @done="onTransferred"
+        />
+
         <job-modal
             v-if="editing"
             :job="editing"
@@ -359,6 +383,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { createApi } from "./api.js";
 import JobModal from "./JobModal.vue";
+import TransferModal from "./TransferModal.vue";
 import { DAYS, TAG_FIELDS, emptyJob } from "./defaults.js";
 
 const props = defineProps({
@@ -378,6 +403,7 @@ const history = ref([]);
 const historyJob = ref("");
 const historyLimit = ref(50);
 const editing = ref(null);
+const transfer = ref(null);
 const notice = ref(null);
 let timer = null;
 
@@ -440,6 +466,13 @@ async function onSaved(job) {
     editing.value = null;
     notify("success", `Émission « ${job.name} » enregistrée.`);
     await reload();
+}
+
+async function onTransferred(message) {
+    const wasImport = transfer.value === "import";
+    transfer.value = null;
+    notify("success", message);
+    if (wasImport) await reload();
 }
 
 async function runNow(job) {

@@ -9,12 +9,16 @@ require __DIR__ . '/../src/Service/Job.php';
 require __DIR__ . '/../src/Service/Scheduler.php';
 require __DIR__ . '/../src/Service/Tagger.php';
 require __DIR__ . '/../src/Service/Database.php';
+require __DIR__ . '/../src/Service/Plugin.php';
+require __DIR__ . '/../src/Service/Store.php';
+require __DIR__ . '/../src/Service/Transfer.php';
 
 use Plugin\AzuracastShowDownloader\Service\Job;
 use Plugin\AzuracastShowDownloader\Service\Naming;
 use Plugin\AzuracastShowDownloader\Service\Scheduler;
 use Plugin\AzuracastShowDownloader\Service\Tagger;
 use Plugin\AzuracastShowDownloader\Service\Database;
+use Plugin\AzuracastShowDownloader\Service\Transfer;
 
 $failures = 0;
 function check(string $label, mixed $actual, mixed $expected): void
@@ -136,6 +140,59 @@ check('savepoint is transient', Database::isTransient($savepoint), true);
 check('deadlock is transient', Database::isTransient(new RuntimeException('x', 0, new RuntimeException('Deadlock found when trying'))), true);
 check('other error not transient', Database::isTransient(new RuntimeException('File type cannot be processed.')), false);
 check('describe shows cause', str_contains(Database::describe($savepoint), 'cause : SQLSTATE[40001]'), true);
+
+// Export / import.
+$src = Job::normalize(array_replace_recursive($input, ['target' => ['playlist_id' => 3]]), null);
+$exportNo = Transfer::export([$src], [3 => 'Matinale'], false, ['name' => 'A', 'short_name' => 'a', 'timezone' => 'Europe/Brussels']);
+check('export hides password', $exportNo['jobs'][0]['source']['password'], null);
+check('export flags password', $exportNo['jobs'][0]['source']['has_password'], true);
+check('export playlist by name', $exportNo['jobs'][0]['target']['playlist_name'], 'Matinale');
+check('export no ids', isset($exportNo['jobs'][0]['id']) || isset($exportNo['jobs'][0]['target']['playlist_id']), false);
+$exportYes = Transfer::export([$src], [], true, ['name' => 'A', 'short_name' => 'a', 'timezone' => 'Europe/Brussels']);
+check('export with secrets', $exportYes['jobs'][0]['source']['password'], 's3cret');
+$json = json_decode(json_encode($exportNo), true);
+
+$playlists = [['id' => 9, 'name' => 'matinale'], ['id' => 10, 'name' => 'Autre']];
+$preview = Transfer::analyze($json, [], $playlists, static fn(string $d): bool => $d === 'Emissions', [], 'Europe/Paris');
+$row = $preview['jobs'][0];
+check('preview playlist matched by name', $row['choice']['playlist_id'], 9);
+check('preview dir missing', $row['directory_exists'], false);
+check('preview missing secrets', $row['missing_secrets'], true);
+check('preview timezone warning', $preview['timezone_warning'] !== null, true);
+$preview2 = Transfer::analyze($json, [], [], static fn(string $d): bool => true, [0 => ['directory' => '/Podcasts/Matin/']], 'Europe/Brussels');
+check('preview dir override', $preview2['jobs'][0]['choice']['directory'], 'Podcasts/Matin');
+check('preview playlist not found', $preview2['jobs'][0]['playlist_found'], false);
+check('preview no tz warning', $preview2['timezone_warning'], null);
+
+$res = Transfer::apply($json, ['jobs' => [], 'state' => [], 'history' => []], [0 => ['directory' => 'Podcasts']], $playlists);
+$imp = $res['data']['jobs'][0];
+check('import new id', $imp['id'] !== $src['id'], true);
+check('import dir', $imp['target']['directory'], 'Podcasts');
+check('import playlist mapped', $imp['target']['playlist_id'], 9);
+check('import disabled without password', $imp['enabled'], false);
+check('import summary', [$res['summary']['added'], $res['summary']['disabled']], [1, ['Matinale']]);
+
+// Replace keeps the password of the existing show.
+$existingData = ['jobs' => [$src], 'state' => [], 'history' => []];
+$res2 = Transfer::apply($json, $existingData, [], $playlists);
+check('replace same id', $res2['data']['jobs'][0]['id'], $src['id']);
+check('replace keeps password', $res2['data']['jobs'][0]['source']['password'], 's3cret');
+check('replace stays enabled', $res2['data']['jobs'][0]['enabled'], true);
+check('replace count', count($res2['data']['jobs']), 1);
+$res3 = Transfer::apply($json, $existingData, [0 => ['mode' => 'add']], $playlists);
+check('add as copy name', $res3['data']['jobs'][1]['name'], 'Matinale (2)');
+try {
+    Transfer::jobs(['format' => 'other']);
+    check('bad format refused', false, true);
+} catch (InvalidArgumentException) {
+    check('bad format refused', true, true);
+}
+try {
+    Transfer::apply($json, $existingData, [0 => ['import' => false]], $playlists);
+    check('nothing selected refused', false, true);
+} catch (InvalidArgumentException) {
+    check('nothing selected refused', true, true);
+}
 
 echo $failures === 0 ? "\nTous les tests réussis.\n" : "\n$failures test(s) en échec.\n";
 exit($failures === 0 ? 0 : 1);

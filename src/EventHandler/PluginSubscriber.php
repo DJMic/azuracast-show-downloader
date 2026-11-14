@@ -62,6 +62,9 @@ final class PluginSubscriber implements EventSubscriberInterface
                 $group->post('/jobs/{job_id}/run', PanelController::class . ':runAction');
                 $group->post('/test', PanelController::class . ':testAction');
                 $group->post('/history/clear', PanelController::class . ':clearHistoryAction');
+                $group->get('/export', PanelController::class . ':exportAction');
+                $group->post('/import/preview', PanelController::class . ':importPreviewAction');
+                $group->post('/import', PanelController::class . ':importAction');
             }
         )
             ->add(new Middleware\Permissions(StationPermissions::Media, true))

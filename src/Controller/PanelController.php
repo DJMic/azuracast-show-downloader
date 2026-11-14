@@ -20,6 +20,7 @@ use Plugin\AzuracastShowDownloader\Service\Plugin;
 use Plugin\AzuracastShowDownloader\Service\Runner;
 use Plugin\AzuracastShowDownloader\Service\Scheduler;
 use Plugin\AzuracastShowDownloader\Service\Store;
+use Plugin\AzuracastShowDownloader\Service\Transfer;
 use Plugin\AzuracastShowDownloader\Source\SourceException;
 use Psr\Http\Message\ResponseInterface;
 use Throwable;
@@ -147,21 +148,7 @@ final class PanelController
                 $existing = $index === null ? null : $data['jobs'][$index];
                 $job = Job::normalize($input, $existing);
 
-                // New, re-enabled or rescheduled jobs never catch up with past slots.
-                $state = $data['state'][$job['id']] ?? [];
-                if (
-                    $existing === null
-                    || ($job['enabled'] && !$existing['enabled'])
-                    || $job['schedule']['slots'] !== $existing['schedule']['slots']
-                ) {
-                    $state['not_before'] = time();
-                    $state['attempts'] = 0;
-                    unset($state['retry_at']);
-                }
-                if ($existing !== null && $job['source'] != $existing['source']) {
-                    unset($state['last_hash']);
-                }
-                $data['state'][$job['id']] = $state;
+                $data['state'][$job['id']] = Job::stateAfterSave($data['state'][$job['id']] ?? [], $job, $existing);
 
                 if ($index === null) {
                     $data['jobs'][] = $job;
@@ -258,6 +245,147 @@ final class PanelController
 
             return $this->json($response, ['success' => true]);
         });
+    }
+
+    public function exportAction(ServerRequest $request, Response $response, array $params): ResponseInterface
+    {
+        return $this->guard($response, function () use ($request, $response): ResponseInterface {
+            $station = $request->getStation();
+            $withSecrets = filter_var($request->getParam('secrets', '0'), FILTER_VALIDATE_BOOLEAN);
+
+            $names = [];
+            foreach ($this->playlists($station) as $playlist) {
+                $names[$playlist['id']] = $playlist['name'];
+            }
+            $export = Transfer::export($this->store->read($station)['jobs'], $names, $withSecrets, [
+                'name' => $station->name,
+                'short_name' => $station->short_name,
+                'timezone' => $station->timezone,
+            ]);
+
+            $filename = sprintf(
+                'telechargements-auto-%s-%s.json',
+                preg_replace('/[^A-Za-z0-9_-]+/', '-', (string)$station->short_name) ?: 'station',
+                date('Y-m-d')
+            );
+            $response->getBody()->write((string)json_encode(
+                $export,
+                JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR
+            ));
+
+            return $response
+                ->withHeader('Content-Type', 'application/json; charset=utf-8')
+                ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
+                ->withHeader('Cache-Control', 'no-store');
+        });
+    }
+
+    public function importPreviewAction(ServerRequest $request, Response $response, array $params): ResponseInterface
+    {
+        return $this->guard($response, function () use ($request, $response): ResponseInterface {
+            $this->verifyCsrf($request);
+            $station = $request->getStation();
+            [$payload, $choices] = $this->importBody($request);
+            $fs = $this->filesystems->getMediaFilesystem($station);
+
+            $preview = Transfer::analyze(
+                $payload,
+                $this->store->read($station)['jobs'],
+                $this->playlists($station),
+                static function (string $dir) use ($fs): ?bool {
+                    try {
+                        return $fs->directoryExists($dir);
+                    } catch (Throwable) {
+                        return null;
+                    }
+                },
+                $choices,
+                (string)$station->timezone
+            );
+
+            return $this->json($response, ['success' => true] + $preview);
+        });
+    }
+
+    public function importAction(ServerRequest $request, Response $response, array $params): ResponseInterface
+    {
+        return $this->guard($response, function () use ($request, $response): ResponseInterface {
+            $this->verifyCsrf($request);
+            $station = $request->getStation();
+            [$payload, $choices] = $this->importBody($request);
+            $createDirectories = filter_var($this->body($request)['create_directories'] ?? true, FILTER_VALIDATE_BOOLEAN);
+            $playlists = $this->playlists($station);
+
+            $summary = null;
+            $this->store->update($station, static function (array $data) use ($payload, $choices, $playlists, &$summary): array {
+                $result = Transfer::apply($payload, $data, $choices, $playlists);
+                $summary = $result['summary'];
+
+                return $result['data'];
+            });
+
+            // Missing folders: created now if asked, otherwise on the first download.
+            $created = [];
+            $failed = [];
+            if ($createDirectories) {
+                $fs = $this->filesystems->getMediaFilesystem($station);
+                foreach ($summary['directories'] as $dir) {
+                    try {
+                        if (!$fs->directoryExists($dir)) {
+                            $fs->createDirectory($dir);
+                            $created[] = $dir;
+                        }
+                    } catch (Throwable) {
+                        $failed[] = $dir;
+                    }
+                }
+            }
+
+            $parts = [];
+            if ($summary['added'] > 0) {
+                $parts[] = $summary['added'] . ' émission(s) ajoutée(s)';
+            }
+            if ($summary['replaced'] > 0) {
+                $parts[] = $summary['replaced'] . ' émission(s) remplacée(s)';
+            }
+            $message = 'Import terminé : ' . implode(', ', $parts) . '.';
+            if ($created !== []) {
+                $message .= ' Dossier(s) créé(s) : ' . implode(', ', array_map(static fn($d) => '/' . $d, $created)) . '.';
+            }
+            if ($failed !== []) {
+                $message .= ' Dossier(s) non créé(s), ils le seront au premier téléchargement : '
+                    . implode(', ', array_map(static fn($d) => '/' . $d, $failed)) . '.';
+            }
+            if ($summary['disabled'] !== []) {
+                $message .= ' Désactivée(s) en attendant le mot de passe ou la clé : '
+                    . implode(', ', $summary['disabled']) . '. Modifiez-les pour saisir le mot de passe puis réactivez-les.';
+            }
+
+            return $this->json($response, ['success' => true, 'message' => $message, 'summary' => $summary]);
+        });
+    }
+
+    /**
+     * @return array{0: array, 1: array<int, array>}
+     */
+    private function importBody(ServerRequest $request): array
+    {
+        if ($request->getBody()->getSize() > 5 * 1024 * 1024) {
+            throw new InvalidArgumentException('Fichier trop volumineux (5 Mo au maximum).');
+        }
+        $body = $this->body($request);
+        $payload = $body['data'] ?? null;
+        if (!is_array($payload)) {
+            throw new InvalidArgumentException('Fichier d\'import illisible.');
+        }
+        $choices = [];
+        foreach (is_array($body['choices'] ?? null) ? $body['choices'] : [] as $index => $choice) {
+            if (is_array($choice)) {
+                $choices[(int)$index] = $choice;
+            }
+        }
+
+        return [$payload, $choices];
     }
 
     private function status(array $job, array $state, DateTimeImmutable $now): array
