@@ -1,5 +1,9 @@
 # Journal des modifications
 
+## 1.2.1 – 2026-11-16
+
+- Correction : avec d'autres plugins présents dans le menu sous « Médias » (Animateurs virtuels, Sweepers…), les pages des plugins restaient vides dans Chrome. Les entrées de menu s'échangeaient leur place sans arrêt, ce qui bloquait la page. Une entrée déjà placée parmi celles des plugins n'est plus jamais déplacée, et son état « actif » est mis à jour sans la recréer.
+
 ## 1.2.0 – 2026-11-14
 
 - Nouveaux boutons « Exporter » et « Importer » : copie des émissions d'une station vers une autre

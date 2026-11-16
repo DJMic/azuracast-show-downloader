@@ -121,18 +121,30 @@ function mount(document, window, basePath, version) {
             return;
         }
 
-        // Other plugins (e.g. Sweepers) also insert their entry right after "Media". To avoid two
-        // scripts moving their entries back and forth forever, ours goes after every entry that
-        // another plugin has added after "Media" (plugin entries are the <li> that have an id).
-        let anchor = mediaItem;
+        // Several plugins add their entry after "Media" (Sweepers, Animateurs virtuels…), each with
+        // its own script. To never fight over positions (two scripts moving their entries back and
+        // forth forever freezes the page), the rule is: an entry already somewhere in the block of
+        // plugin entries that follows "Media" (the <li> with an id) is never moved. Only a missing or
+        // misplaced entry is put at the end of that block.
+        let last = mediaItem;
+        let inBlock = false;
         for (let next = mediaItem.nextElementSibling; next?.matches("li.nav-item[id]"); next = next.nextElementSibling) {
-            if (next.id !== ITEM_ID) anchor = next;
+            if (next.id === ITEM_ID) inBlock = true;
+            else last = next;
         }
 
         const href = `${station.path}/show-downloader`;
         const active = window.location.pathname.replace(/\/$/, "") === href;
-        if (existing && existing.dataset.signature === `${href}|${active}`) {
-            if (existing.previousElementSibling !== anchor) anchor.after(existing);
+        if (existing?.dataset.href === href) {
+            // Same station: only update the "active" state in place (no DOM move).
+            const link = existing.querySelector("a");
+            if (existing.dataset.active !== String(active)) {
+                existing.dataset.active = String(active);
+                link.classList.toggle("active", active);
+                if (active) link.setAttribute("aria-current", "page");
+                else link.removeAttribute("aria-current");
+            }
+            if (!inBlock) last.after(existing);
             return;
         }
         existing?.remove();
@@ -140,7 +152,8 @@ function mount(document, window, basePath, version) {
         const item = document.createElement("li");
         item.id = ITEM_ID;
         item.className = "nav-item";
-        item.dataset.signature = `${href}|${active}`;
+        item.dataset.href = href;
+        item.dataset.active = String(active);
 
         const link = document.createElement("a");
         link.className = active ? "nav-link active" : "nav-link";
@@ -164,7 +177,7 @@ function mount(document, window, basePath, version) {
 
         link.append(svg, label);
         item.append(link);
-        anchor.after(item);
+        last.after(item);
     }
 
     function schedule() {
